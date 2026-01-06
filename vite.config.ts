@@ -5,7 +5,8 @@ import react from '@vitejs/plugin-react'
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   // 透過 @types/node，這裡的 process.cwd() 現在是合法的 TS 語法
-  const env = loadEnv(mode, process.cwd(), '');
+  // Fix: Cast process to any to resolve TS error when @types/node is missing or incomplete
+  const env = loadEnv(mode, (process as any).cwd(), '');
   return {
     // Vercel 部署通常使用根目錄，因此移除 '/DRINKS/' 設定
     plugins: [react()],

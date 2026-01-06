@@ -177,8 +177,8 @@ const StatsOverview: React.FC<StatsOverviewProps> = ({ records }) => {
                    dataKey="count"
                    nameKey="name"
                    stroke="none"
-                   // FIX: Added explicit type check for percent, defaulting to 0 if undefined
-                   label={({ name, percent }: { name: string; percent?: number }) => (percent || 0) > 0.1 ? name : ''}
+                   // FIX: Loose type for name to satisfy Recharts types, handle optional/undefined name
+                   label={({ name, percent }: { name?: string | number; percent?: number }) => (percent || 0) > 0.1 ? String(name || '') : ''}
                    labelLine={false}
                  >
                    {brandData.map((entry, index) => (
