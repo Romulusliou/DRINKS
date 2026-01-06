@@ -1,3 +1,4 @@
+
 import React, { useMemo } from 'react';
 import { DrinkRecord } from '../types';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
@@ -176,7 +177,8 @@ const StatsOverview: React.FC<StatsOverviewProps> = ({ records }) => {
                    dataKey="count"
                    nameKey="name"
                    stroke="none"
-                   label={({ name, percent }) => percent > 0.1 ? name : ''}
+                   // FIX: Added explicit type check for percent, defaulting to 0 if undefined
+                   label={({ name, percent }: { name: string; percent?: number }) => (percent || 0) > 0.1 ? name : ''}
                    labelLine={false}
                  >
                    {brandData.map((entry, index) => (

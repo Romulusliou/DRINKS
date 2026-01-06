@@ -15,6 +15,9 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* Types */
+    "types": ["node"],
+
     /* Linting */
     "strict": true,
     "noUnusedLocals": false,
