@@ -1,6 +1,5 @@
-
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, BarChart3, List, CupSoda, Trash2, Download, Upload, Star, Settings, AlertTriangle, BookOpen, Trophy, RefreshCw, Calendar, Tag, FileJson, X } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Plus, BarChart3, List, CupSoda, Trash2, Download, Star, Settings, AlertTriangle, BookOpen, Trophy, RefreshCw, Calendar, Tag, X, Wifi } from 'lucide-react';
 import { DrinkRecord, IceLevel, TAIPEI_BRANDS, COMMON_TOPPINGS, UserConfig } from './types';
 import * as Storage from './services/storageService';
 import StatsOverview from './components/StatsOverview';
@@ -23,35 +22,51 @@ const SwipeableItem: React.FC<SwipeableItemProps> = ({ record, onDelete }) => {
   const [startX, setStartX] = useState(0);
   const [currentX, setCurrentX] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
-  const threshold = 120; // Distance to trigger delete
+  const threshold = 120; 
 
+  // Touch Events (Mobile)
   const handleTouchStart = (e: React.TouchEvent) => {
     setStartX(e.touches[0].clientX);
     setIsSwiping(true);
   };
-
   const handleTouchMove = (e: React.TouchEvent) => {
     if (!isSwiping) return;
     const diff = e.touches[0].clientX - startX;
-    // Only allow swiping to the right as requested
-    if (diff > 0) {
-      setCurrentX(diff);
-    }
+    if (diff > 0) setCurrentX(diff);
   };
-
   const handleTouchEnd = () => {
     setIsSwiping(false);
-    if (currentX > threshold) {
-      onDelete(record.id);
-    }
+    if (currentX > threshold) onDelete(record.id);
     setCurrentX(0);
   };
 
+  // Mouse Events (Desktop)
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setStartX(e.clientX);
+    setIsSwiping(true);
+  };
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isSwiping) return;
+    const diff = e.clientX - startX;
+    if (diff > 0) setCurrentX(diff);
+  };
+  const handleMouseUp = () => {
+    if (!isSwiping) return;
+    setIsSwiping(false);
+    if (currentX > threshold) onDelete(record.id);
+    setCurrentX(0);
+  };
+  const handleMouseLeave = () => {
+    if (isSwiping) {
+        setIsSwiping(false);
+        setCurrentX(0);
+    }
+  };
+
   return (
-    <div className="relative overflow-hidden rounded-2xl mb-4">
-      {/* Background Action Area (Revealed on swipe) */}
+    <div className="relative overflow-hidden rounded-2xl mb-4 group cursor-grab active:cursor-grabbing">
       <div 
-        className="absolute inset-0 bg-red-600 flex items-center pl-6 transition-opacity"
+        className="absolute inset-0 bg-red-600/90 flex items-center pl-6 transition-opacity"
         style={{ opacity: currentX > 20 ? 1 : 0 }}
       >
         <div className={`flex items-center gap-2 text-white font-bold transition-transform ${currentX > threshold ? 'scale-110' : 'scale-100'}`}>
@@ -60,12 +75,15 @@ const SwipeableItem: React.FC<SwipeableItemProps> = ({ record, onDelete }) => {
         </div>
       </div>
 
-      {/* Main Content Card */}
       <div 
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        className="bg-slate-900 p-5 border border-slate-800 relative z-10 transition-transform duration-200 ease-out select-none touch-pan-y"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+        className="bg-slate-900/80 p-5 border border-slate-800 relative z-10 transition-transform duration-200 ease-out select-none"
         style={{ 
           transform: `translateX(${currentX}px)`,
           borderLeftWidth: currentX > 0 ? '0' : '1px'
@@ -84,9 +102,6 @@ const SwipeableItem: React.FC<SwipeableItemProps> = ({ record, onDelete }) => {
            {[...Array(5)].map((_, i) => <Star key={i} className={`w-3 h-3 ${i < record.rating ? 'fill-amber-500 text-amber-500' : 'text-slate-700'}`} />)}
         </div>
         {record.review && <p className="text-xs text-slate-400 italic mt-3 border-l-2 border-slate-700 pl-3">"{record.review}"</p>}
-        
-        {/* Swipe Hint Indicator (Mobile users) */}
-        <div className="absolute top-1/2 -right-1 transform -translate-y-1/2 w-1 h-8 bg-slate-800 rounded-full opacity-30"></div>
       </div>
     </div>
   );
@@ -94,75 +109,85 @@ const SwipeableItem: React.FC<SwipeableItemProps> = ({ record, onDelete }) => {
 
 export default function App() {
   const [nickname, setNickname] = useState('');
+  const [groupId, setGroupId] = useState('2026drinks');
   const [isSetup, setIsSetup] = useState(false);
   const [tempName, setTempName] = useState('');
+  const [tempGroupId, setTempGroupId] = useState('2026drinks');
+  
   const [config, setConfig] = useState<UserConfig>({ nickname: '' });
   const [showConfig, setShowConfig] = useState(false);
 
   const [activeTab, setActiveTab] = useState<Tab>(Tab.LOG);
   const [records, setRecords] = useState<DrinkRecord[]>([]);
-  const [showImport, setShowImport] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
+  // Setup Check
   useEffect(() => {
-    const initialRecords = Storage.getRecords();
-    setRecords(initialRecords);
     const storedName = localStorage.getItem('user_nickname');
+    const storedGroup = localStorage.getItem('user_group_id');
     const storedConfig = localStorage.getItem('user_config');
-    if (storedName) {
+    
+    if (storedName && storedGroup) {
       setNickname(storedName);
+      setGroupId(storedGroup);
       setIsSetup(true);
       if (storedConfig) setConfig(JSON.parse(storedConfig));
     }
   }, []);
 
+  // Data Sync
+  useEffect(() => {
+    if (!isSetup || !groupId) return;
+
+    const loadData = async () => {
+      setIsLoading(true);
+      try {
+        const data = await Storage.fetchRecords(groupId);
+        setRecords(data);
+      } catch (e) {
+        console.error("Load failed", e);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+    const subscription = Storage.subscribeToGroup(groupId, () => loadData());
+    return () => { subscription.unsubscribe(); };
+  }, [isSetup, groupId]);
+
+  // Statistics
   const currentMonthStats = useMemo(() => {
     const now = new Date();
     const thisMonth = records.filter(r => {
       const d = new Date(r.date);
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     });
-    const spent = thisMonth.reduce((acc, r) => acc + r.price, 0);
-    const avgSugar = thisMonth.length > 0 
-      ? thisMonth.reduce((acc, r) => acc + r.sugarValue, 0) / thisMonth.length 
+    
+    const myRecords = thisMonth.filter(r => r.drinkerName === nickname);
+    const spent = myRecords.reduce((acc, r) => acc + r.price, 0);
+    const avgSugar = myRecords.length > 0 
+      ? myRecords.reduce((acc, r) => acc + r.sugarValue, 0) / myRecords.length 
       : 0;
-    return { count: thisMonth.length, spent, avgSugar };
-  }, [records]);
+    return { count: myRecords.length, spent, avgSugar, totalGroupCount: thisMonth.length };
+  }, [records, nickname]);
 
   const handleSetup = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tempName.trim()) return;
+    if (!tempName.trim() || !tempGroupId.trim()) return;
     localStorage.setItem('user_nickname', tempName.trim());
+    localStorage.setItem('user_group_id', tempGroupId.trim());
     setNickname(tempName.trim());
+    setGroupId(tempGroupId.trim());
     setIsSetup(true);
   };
 
-  const handleSaveConfig = () => {
-    localStorage.setItem('user_config', JSON.stringify(config));
-    setShowConfig(false);
-  };
-
   const handleResetApp = () => {
-    if (confirm("警告：這將清空所有紀錄並重置 App，確定嗎？")) {
-      Storage.clearAllData();
+    if (confirm("這將登出並清除本機設定 (雲端資料不會刪除)，確定嗎？")) {
       localStorage.removeItem('user_nickname');
+      localStorage.removeItem('user_group_id');
       localStorage.removeItem('user_config');
       window.location.reload();
-    }
-  };
-
-  const getSugarLabel = (val: number) => {
-    if (val === 0) return "無糖 (0分)";
-    if (val === 10) return "全糖 (10分)";
-    return `${val} 分糖`;
-  };
-
-  const handleToppingToggle = (t: string) => {
-    const currentToppings = toppings.split(',').map(item => item.trim()).filter(Boolean);
-    if (currentToppings.includes(t)) {
-      setToppings(currentToppings.filter(item => item !== t).join(', '));
-    } else {
-      setToppings(currentToppings.concat(t).join(', '));
     }
   };
 
@@ -172,13 +197,20 @@ export default function App() {
   const [drinkName, setDrinkName] = useState('');
   const [price, setPrice] = useState<number | ''>('');
   const [sugarVal, setSugarVal] = useState<number>(5); 
-  const [ice, setIce] = useState<string>(IceLevel.Regular);
+  const [ice, setIce] = useState<string>(IceLevel.Half);
   const [toppings, setToppings] = useState(''); 
   const [review, setReview] = useState('');
-  const [rating, setRating] = useState(3); 
+  const [rating, setRating] = useState(4); 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]); 
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const getSugarLabel = (val: number) => {
+    if (val === 0) return "無糖 (0分)";
+    if (val === 10) return "全糖 (10分)";
+    return `${val} 分糖`;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const finalBrand = brand === "其他 (自訂)" ? customBrand : brand;
     if (!finalBrand || !drinkName || !price) {
@@ -186,6 +218,7 @@ export default function App() {
       return;
     }
 
+    setIsSubmitting(true);
     const newRecord: DrinkRecord = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       drinkerName: nickname,
@@ -202,55 +235,25 @@ export default function App() {
       timestamp: new Date(date).getTime()
     };
 
-    const updated = Storage.saveRecord(newRecord);
-    setRecords(updated);
-    
-    setDrinkName('');
-    setPrice('');
-    setToppings('');
-    setReview('');
-    setRating(3);
-    setDate(new Date().toISOString().split('T')[0]);
-    alert("紀錄成功！圖鑑已更新 ✨");
+    try {
+      await Storage.saveRecord(newRecord, groupId);
+      setDrinkName('');
+      setPrice('');
+      setToppings('');
+      setReview('');
+      setRating(4);
+      alert("紀錄成功！");
+    } catch (e) {
+      alert("上傳失敗");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleDelete = (id: string) => {
-    if (window.navigator && window.navigator.vibrate) {
-      window.navigator.vibrate(50);
-    }
-    
+  const handleDelete = async (id: string) => {
     if (confirm("確定要放生這筆紀錄嗎？")) {
-      const updated = Storage.deleteRecord(id);
-      setRecords([...updated]);
+      try { await Storage.deleteRecord(id); } catch(e) { alert("刪除失敗"); }
     }
-  };
-
-  const handleExport = () => {
-    const data = Storage.exportData();
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `手搖飲全紀錄_${nickname}_備份.json`;
-    a.click();
-  };
-
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const addedCount = Storage.importData(event.target?.result as string);
-      if (addedCount >= 0) {
-        setRecords(Storage.getRecords());
-        setShowImport(false);
-        alert(`資料合併成功！新增了 ${addedCount} 筆紀錄。`);
-      } else {
-        alert("匯入失敗：檔案格式不正確。");
-      }
-      e.target.value = '';
-    };
-    reader.readAsText(file);
   };
 
   if (!isSetup) {
@@ -258,15 +261,26 @@ export default function App() {
       <div className="min-h-screen bg-[#020617] text-slate-200 flex flex-col items-center justify-center p-6">
         <div className="bg-slate-900 p-8 rounded-3xl shadow-2xl border border-slate-800 w-full max-w-sm text-center">
           <CupSoda className="w-16 h-16 text-amber-500 mx-auto mb-6" />
-          <h1 className="text-2xl font-bold mb-2">手搖飲全紀錄</h1>
-          <p className="text-xs text-slate-500 mb-6">2026 年度手搖生活紀錄計畫</p>
+          <h1 className="text-2xl font-bold mb-2">手搖飲全紀錄 2026</h1>
+          <p className="text-xs text-slate-500 mb-6">雲端同步版 - 與朋友一起喝</p>
           <form onSubmit={handleSetup} className="space-y-4">
-            <input 
-              type="text" required placeholder="你的暱稱"
-              value={tempName} onChange={e => setTempName(e.target.value)}
-              className="w-full p-4 rounded-xl bg-slate-950 border border-slate-800 text-center font-bold"
-            />
-            <button type="submit" className="w-full bg-amber-500 text-slate-900 font-bold py-4 rounded-xl">開啟計畫</button>
+            <div className="text-left">
+              <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">你的暱稱</label>
+              <input 
+                type="text" required placeholder="例如：珍珠大師"
+                value={tempName} onChange={e => setTempName(e.target.value)}
+                className="w-full p-4 rounded-xl bg-slate-950 border border-slate-800 text-center font-bold outline-none focus:border-amber-500"
+              />
+            </div>
+            <div className="text-left">
+              <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">群組代碼 (與朋友共用)</label>
+              <input 
+                type="text" required placeholder="例如：2026drinks"
+                value={tempGroupId} onChange={e => setTempGroupId(e.target.value)}
+                className="w-full p-4 rounded-xl bg-slate-950 border border-slate-800 text-center font-bold font-mono text-amber-500 outline-none focus:border-amber-500"
+              />
+            </div>
+            <button type="submit" className="w-full bg-amber-500 text-slate-900 font-bold py-4 rounded-xl hover:bg-amber-400 transition-colors">開始記錄</button>
           </form>
         </div>
       </div>
@@ -274,82 +288,30 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 pb-24 font-sans">
+    <div className="min-h-screen bg-slate-950 text-slate-200 pb-24 font-sans selection:bg-amber-500/30">
       <header className="bg-slate-900/80 backdrop-blur-md border-b border-slate-800 p-4 sticky top-0 z-50">
         <div className="max-w-md mx-auto flex justify-between items-center">
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            <CupSoda className="w-5 h-5 text-amber-500" /> 手搖飲全紀錄
-          </h1>
-          <div className="flex gap-1">
-            <button onClick={() => setShowConfig(true)} className="p-2 text-slate-400 hover:text-white transition-colors"><Settings className="w-5 h-5" /></button>
-            <button onClick={handleExport} className="p-2 text-slate-400 hover:text-white transition-colors"><Download className="w-5 h-5" /></button>
-            <button onClick={() => setShowImport(true)} className="p-2 text-slate-400 hover:text-white transition-colors"><Upload className="w-5 h-5" /></button>
+          <div className="flex flex-col">
+            <h1 className="text-xl font-bold flex items-center gap-2">
+              <CupSoda className="w-5 h-5 text-amber-500" /> 手搖飲全紀錄
+            </h1>
+            <span className="text-[10px] text-slate-500 flex items-center gap-1">
+              <Wifi className="w-3 h-3 text-emerald-500" /> 群組: {groupId}
+            </span>
           </div>
+          <button onClick={() => setShowConfig(true)} className="p-2 text-slate-400 hover:text-white transition-colors"><Settings className="w-5 h-5" /></button>
         </div>
       </header>
-
-      {/* Import Modal */}
-      {showImport && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-6" onClick={() => setShowImport(false)}>
-          <div className="bg-slate-900 w-full max-w-sm p-6 rounded-3xl border border-slate-800 space-y-6 shadow-2xl relative" onClick={e => e.stopPropagation()}>
-            <button onClick={() => setShowImport(false)} className="absolute top-4 right-4 p-1 text-slate-500 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
-            
-            <div className="text-center space-y-2">
-              <div className="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                <FileJson className="w-8 h-8 text-amber-500" />
-              </div>
-              <h3 className="text-lg font-bold">匯入與合併紀錄</h3>
-              <p className="text-xs text-slate-500 leading-relaxed px-4">
-                選取朋友分享的備份檔案 (.json)，系統會自動將新紀錄合併到您的清單中，重複的紀錄將被跳過。
-              </p>
-            </div>
-            
-            <div className="space-y-3">
-              <input 
-                type="file" 
-                accept=".json" 
-                ref={fileInputRef} 
-                onChange={handleImport} 
-                className="hidden" 
-              />
-              <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full py-4 bg-amber-500 text-slate-900 font-bold rounded-2xl shadow-lg shadow-amber-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
-              >
-                <Upload className="w-5 h-5" /> 選擇備份檔案
-              </button>
-              <p className="text-[10px] text-center text-slate-600 font-medium">支援從其它手機匯出的 .json 格式</p>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Settings Modal */}
       {showConfig && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-6" onClick={() => setShowConfig(false)}>
           <div className="bg-slate-900 w-full max-w-sm p-6 rounded-3xl border border-slate-800 space-y-6 shadow-2xl relative" onClick={e => e.stopPropagation()}>
             <button onClick={() => setShowConfig(false)} className="absolute top-4 right-4 p-1 text-slate-500 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
-            <h3 className="text-lg font-bold flex items-center gap-2"><Settings className="w-5 h-5 text-slate-400" /> 個人設定</h3>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1">每月預算 ($)</label>
-                <input type="number" value={config.monthlyBudget || ''} onChange={e => setConfig({...config, monthlyBudget: Number(e.target.value)})} className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl focus:border-amber-500 outline-none" />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1">每月杯數上限</label>
-                <input type="number" value={config.monthlyCupLimit || ''} onChange={e => setConfig({...config, monthlyCupLimit: Number(e.target.value)})} className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl focus:border-amber-500 outline-none" />
-              </div>
-              <button onClick={handleSaveConfig} className="w-full py-3 bg-amber-500 text-slate-900 font-bold rounded-xl shadow-lg shadow-amber-500/20">儲存設定</button>
-            </div>
-
-            <div className="pt-6 border-t border-slate-800 space-y-3">
-              <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">系統管理</p>
-              <button 
-                onClick={handleResetApp}
-                className="w-full py-2 px-4 rounded-xl border border-red-500/50 text-red-400 text-xs font-bold flex items-center justify-center gap-2 bg-red-500/10 hover:bg-red-500/20 transition-all"
-              >
-                <RefreshCw className="w-3.5 h-3.5" /> 重置並清空所有資料
+            <h3 className="text-lg font-bold flex items-center gap-2"><Settings className="w-5 h-5 text-slate-400" /> 設定</h3>
+            <div className="pt-2 border-t border-slate-800 space-y-3">
+              <button onClick={handleResetApp} className="w-full py-3 px-4 rounded-xl border border-red-500/50 text-red-400 text-sm font-bold flex items-center justify-center gap-2 bg-red-500/10 hover:bg-red-500/20">
+                <RefreshCw className="w-4 h-4" /> 登出 / 切換群組
               </button>
             </div>
           </div>
@@ -357,146 +319,132 @@ export default function App() {
       )}
 
       <main className="max-w-md mx-auto p-4">
-        {activeTab === Tab.LOG && (
-          <div className="space-y-6">
-            <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 shadow-xl relative overflow-hidden">
-               <div className="absolute top-0 right-0 p-4 opacity-10"><CupSoda className="w-20 h-20" /></div>
-               <div className="relative z-10 flex justify-between items-end">
-                  <div>
-                    <p className="text-xs text-slate-500 font-bold uppercase mb-1">本月戰況</p>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-3xl font-black text-amber-500">{currentMonthStats.count}</span>
-                      <span className="text-slate-400 text-sm">杯 / ${currentMonthStats.spent}</span>
+        {isLoading && records.length === 0 ? (
+          <div className="flex justify-center py-20 text-slate-500"><div className="animate-spin h-8 w-8 border-4 border-amber-500 border-t-transparent rounded-full"></div></div>
+        ) : (
+          <>
+            {activeTab === Tab.LOG && (
+              <div className="space-y-6 animate-fade-in">
+                {/* Dashboard Card */}
+                <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 shadow-xl relative overflow-hidden">
+                   <div className="absolute top-0 right-0 p-4 opacity-10"><CupSoda className="w-20 h-20" /></div>
+                   <div className="relative z-10 flex justify-between items-end">
+                      <div>
+                        <p className="text-xs text-slate-500 font-bold uppercase mb-1">本月戰況 ({nickname})</p>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-3xl font-black text-amber-500">{currentMonthStats.count}</span>
+                          <span className="text-slate-400 text-sm">杯 / ${currentMonthStats.spent}</span>
+                        </div>
+                        <p className="text-[10px] text-slate-600 mt-1">群組本月共 {currentMonthStats.totalGroupCount} 杯</p>
+                      </div>
+                   </div>
+                   {currentMonthStats.avgSugar > 7 && (
+                     <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center gap-3 animate-pulse">
+                       <AlertTriangle className="w-5 h-5 text-amber-500" />
+                       <p className="text-xs text-amber-200">警告：平均 {currentMonthStats.avgSugar.toFixed(1)} 分糖！</p>
+                     </div>
+                   )}
+                </div>
+
+                {/* Input Form */}
+                <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800">
+                  <h2 className="text-lg font-bold mb-6 flex items-center gap-2"><Plus className="w-5 h-5 text-amber-500" /> 紀錄這一杯</h2>
+                  <form onSubmit={handleSubmit} className="space-y-5">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-500 font-bold uppercase ml-1">品牌</label>
+                        <select value={brand} onChange={e => setBrand(e.target.value)} className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-sm outline-none focus:border-amber-500">
+                          {TAIPEI_BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-500 font-bold uppercase ml-1">日期</label>
+                        <div className="relative">
+                          <Calendar className="absolute left-3 top-3.5 w-4 h-4 text-slate-500 pointer-events-none" />
+                          <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full pl-9 p-3 rounded-xl bg-slate-950 border border-slate-800 text-sm outline-none focus:border-amber-500" />
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  {config.monthlyBudget && (
-                    <div className="text-right">
-                      <p className="text-[10px] text-slate-500 font-bold">預算剩餘</p>
-                      <p className={`font-mono font-bold ${currentMonthStats.spent > config.monthlyBudget ? 'text-red-500' : 'text-emerald-500'}`}>
-                        ${config.monthlyBudget - currentMonthStats.spent}
-                      </p>
+
+                    {brand === "其他 (自訂)" && <input type="text" placeholder="輸入店名" value={customBrand} onChange={e => setCustomBrand(e.target.value)} className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-sm focus:border-amber-500 outline-none" />}
+                    
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-500 font-bold uppercase ml-1">飲品名稱</label>
+                      <input type="text" required placeholder="例如：熟成紅茶" value={drinkName} onChange={e => setDrinkName(e.target.value)} className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 focus:border-amber-500 outline-none" />
                     </div>
-                  )}
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                       <div className="space-y-1">
+                          <label className="text-[10px] text-slate-500 font-bold uppercase ml-1">價格</label>
+                          <input type="number" required placeholder="$$" value={price} onChange={e => setPrice(Number(e.target.value))} className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono focus:border-amber-500 outline-none" />
+                       </div>
+                       <div className="space-y-1">
+                          <label className="text-[10px] text-slate-500 font-bold uppercase ml-1">冰塊</label>
+                          <select value={ice} onChange={e => setIce(e.target.value)} className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-sm outline-none focus:border-amber-500">
+                            {Object.values(IceLevel).map(lvl => <option key={lvl} value={lvl}>{lvl}</option>)}
+                          </select>
+                       </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-xs font-bold text-slate-500"><span>甜度</span><span className="text-amber-500">{getSugarLabel(sugarVal)}</span></div>
+                      <input type="range" min="0" max="10" value={sugarVal} onChange={e => setSugarVal(Number(e.target.value))} className="w-full h-2 bg-slate-800 rounded-lg appearance-none accent-amber-500" />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] text-slate-500 font-bold uppercase ml-1 flex items-center gap-1"><Tag className="w-3 h-3" /> 加料</label>
+                      <div className="flex flex-wrap gap-2">
+                        {COMMON_TOPPINGS.map(t => (
+                          <button 
+                            key={t} type="button" 
+                            onClick={() => {
+                                const curr = toppings.split(',').map(s=>s.trim()).filter(Boolean);
+                                setToppings(curr.includes(t) ? curr.filter(x=>x!==t).join(',') : [...curr, t].join(','));
+                            }}
+                            className={`px-3 py-1 rounded-full text-[10px] border transition-all ${toppings.includes(t) ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-slate-950 border-slate-800 text-slate-500'}`}
+                          >
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between bg-slate-950 p-4 rounded-xl border border-slate-800">
+                       <span className="text-xs font-bold text-slate-500 uppercase">評分</span>
+                       <div className="flex gap-1">
+                        {[1, 2, 3, 4, 5].map(s => <button key={s} type="button" onClick={() => setRating(s)} className="active:scale-125 transition-transform"><Star className={`w-7 h-7 ${rating >= s ? 'fill-amber-400 text-amber-400' : 'fill-slate-800 text-slate-700'}`} /></button>)}
+                       </div>
+                    </div>
+
+                    <button 
+                      type="submit" 
+                      disabled={isSubmitting}
+                      className={`w-full font-bold py-4 rounded-xl shadow-lg transition-transform active:scale-95 ${isSubmitting ? 'bg-slate-700 text-slate-400' : 'bg-amber-500 text-slate-900 shadow-amber-500/20'}`}
+                    >
+                      {isSubmitting ? '處理中...' : '紀錄這杯'}
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {activeTab === Tab.LIST && (
+               <div className="space-y-4 animate-fade-in">
+                 <div className="text-center mb-2"><span className="text-[10px] text-slate-500 font-bold bg-slate-900 px-3 py-1 rounded-full border border-slate-800">往右滑動卡片可刪除</span></div>
+                 {records.map(r => <SwipeableItem key={r.id} record={r} onDelete={handleDelete} />)}
+                 {records.length === 0 && <div className="text-center py-20 text-slate-600">還沒有紀錄</div>}
                </div>
+            )}
 
-               {currentMonthStats.avgSugar > 7 && (
-                 <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center gap-3 animate-pulse">
-                   <AlertTriangle className="w-5 h-5 text-amber-500" />
-                   <p className="text-xs text-amber-200">警告：本月糖分過高！平均 {currentMonthStats.avgSugar.toFixed(1)} 分糖，建議下幾杯試試微糖。</p>
-                 </div>
-               )}
-            </div>
-
-            <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800">
-              <h2 className="text-lg font-bold mb-6 flex items-center gap-2"><Plus className="w-5 h-5 text-amber-500" /> 新增紀錄</h2>
-              <form onSubmit={handleSubmit} className="space-y-5">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-500 font-bold uppercase ml-1">品牌</label>
-                    <select value={brand} onChange={e => setBrand(e.target.value)} className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-sm outline-none focus:border-amber-500 transition-colors">
-                      {TAIPEI_BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-500 font-bold uppercase ml-1">日期</label>
-                    <div className="relative">
-                      <Calendar className="absolute left-3 top-3.5 w-4 h-4 text-slate-500 pointer-events-none" />
-                      <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full pl-9 p-3 rounded-xl bg-slate-950 border border-slate-800 text-sm outline-none focus:border-amber-500 transition-colors" />
-                    </div>
-                  </div>
-                </div>
-
-                {brand === "其他 (自訂)" && <input type="text" placeholder="店名" value={customBrand} onChange={e => setCustomBrand(e.target.value)} className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-sm focus:border-amber-500 outline-none" />}
-                
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-500 font-bold uppercase ml-1">飲品名稱</label>
-                  <input type="text" required placeholder="例如：珍珠奶茶" value={drinkName} onChange={e => setDrinkName(e.target.value)} className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 focus:border-amber-500 outline-none" />
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                   <div className="space-y-1">
-                      <label className="text-[10px] text-slate-500 font-bold uppercase ml-1">價格</label>
-                      <input type="number" required placeholder="$$" value={price} onChange={e => setPrice(Number(e.target.value))} className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono focus:border-amber-500 outline-none" />
-                   </div>
-                   <div className="space-y-1">
-                      <label className="text-[10px] text-slate-500 font-bold uppercase ml-1">冰塊</label>
-                      <select value={ice} onChange={e => setIce(e.target.value)} className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-sm outline-none focus:border-amber-500">
-                        {Object.values(IceLevel).map(lvl => <option key={lvl} value={lvl}>{lvl}</option>)}
-                      </select>
-                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs font-bold text-slate-500"><span>甜度</span><span className="text-amber-500">{getSugarLabel(sugarVal)}</span></div>
-                  <input type="range" min="0" max="10" value={sugarVal} onChange={e => setSugarVal(Number(e.target.value))} className="w-full h-2 bg-slate-800 rounded-lg appearance-none accent-amber-500" />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-[10px] text-slate-500 font-bold uppercase ml-1 flex items-center gap-1">
-                    <Tag className="w-3 h-3" /> 加料 (可手動輸入或選取)
-                  </label>
-                  <input 
-                    type="text" 
-                    placeholder="珍珠, 椰果..." 
-                    value={toppings} 
-                    onChange={e => setToppings(e.target.value)} 
-                    className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 focus:border-amber-500 outline-none text-sm" 
-                  />
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {COMMON_TOPPINGS.map(t => (
-                      <button 
-                        key={t} 
-                        type="button" 
-                        onClick={() => handleToppingToggle(t)}
-                        className={`px-3 py-1 rounded-full text-[10px] border transition-all ${toppings.includes(t) ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-slate-950 border-slate-800 text-slate-500 hover:border-slate-600'}`}
-                      >
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <textarea placeholder="短評..." value={review} onChange={e => setReview(e.target.value)} rows={2} className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-sm focus:border-amber-500 outline-none" />
-                
-                <div className="flex items-center justify-between bg-slate-950 p-4 rounded-xl border border-slate-800">
-                   <span className="text-xs font-bold text-slate-500 uppercase">評分</span>
-                   <div className="flex gap-1">
-                    {[1, 2, 3, 4, 5].map(s => <button key={s} type="button" onClick={() => setRating(s)} className={`transition-transform active:scale-125 ${rating >= s ? 'text-amber-400' : 'text-slate-700'}`}><Star className={`w-7 h-7 ${rating >= s ? 'fill-amber-400' : 'fill-slate-800'}`} /></button>)}
-                   </div>
-                </div>
-
-                <button type="submit" className="w-full bg-gradient-to-r from-amber-500 to-orange-600 text-white font-bold py-4 rounded-xl shadow-lg shadow-amber-500/10 active:scale-95 transition-transform">紀錄這杯！</button>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {activeTab === Tab.LIST && (
-           <div className="space-y-4">
-             <div className="mb-2 text-center">
-               <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">💡 提示：向右滑動卡片可刪除紀錄</span>
-             </div>
-             {records.map(r => (
-               <SwipeableItem key={r.id} record={r} onDelete={handleDelete} />
-             ))}
-             {records.length === 0 && (
-               <div className="text-center py-20 text-slate-600">
-                 尚未有任何紀錄，快去喝一杯吧！
-               </div>
-             )}
-           </div>
-        )}
-
-        {activeTab === Tab.POKEDEX && <BobaPokedex records={records} />}
-
-        {activeTab === Tab.STATS && (
-          <div className="space-y-8">
-             <div>
-               <h3 className="text-lg font-black mb-4 flex items-center gap-2"><Trophy className="w-6 h-6 text-amber-500" /> 紀錄勳章牆</h3>
-               <MedalWall records={records} />
-             </div>
-             <StatsOverview records={records} />
-          </div>
+            {activeTab === Tab.POKEDEX && <BobaPokedex records={records} />}
+            
+            {activeTab === Tab.STATS && (
+              <div className="space-y-8 animate-fade-in">
+                 <MedalWall records={records} />
+                 <StatsOverview records={records} />
+              </div>
+            )}
+          </>
         )}
       </main>
 
