@@ -191,6 +191,17 @@ export default function App() {
     }
   };
 
+  const handleExport = async () => {
+    const data = await Storage.exportData(groupId);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `手搖飲_${groupId}_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // Form State
   const [brand, setBrand] = useState(TAIPEI_BRANDS[0]);
   const [customBrand, setCustomBrand] = useState('');
@@ -299,7 +310,10 @@ export default function App() {
               <Wifi className="w-3 h-3 text-emerald-500" /> 群組: {groupId}
             </span>
           </div>
-          <button onClick={() => setShowConfig(true)} className="p-2 text-slate-400 hover:text-white transition-colors"><Settings className="w-5 h-5" /></button>
+          <div className="flex gap-1">
+            <button onClick={handleExport} className="p-2 text-slate-400 hover:text-white transition-colors"><Download className="w-5 h-5" /></button>
+            <button onClick={() => setShowConfig(true)} className="p-2 text-slate-400 hover:text-white transition-colors"><Settings className="w-5 h-5" /></button>
+          </div>
         </div>
       </header>
 
@@ -393,13 +407,20 @@ export default function App() {
 
                     <div className="space-y-2">
                       <label className="text-[10px] text-slate-500 font-bold uppercase ml-1 flex items-center gap-1"><Tag className="w-3 h-3" /> 加料</label>
+                      <input 
+                        type="text" 
+                        placeholder="自訂加料... (例如: 布丁, 仙草)"
+                        value={toppings}
+                        onChange={e => setToppings(e.target.value)}
+                        className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 focus:border-amber-500 outline-none text-sm mb-2"
+                      />
                       <div className="flex flex-wrap gap-2">
                         {COMMON_TOPPINGS.map(t => (
                           <button 
                             key={t} type="button" 
                             onClick={() => {
                                 const curr = toppings.split(',').map(s=>s.trim()).filter(Boolean);
-                                setToppings(curr.includes(t) ? curr.filter(x=>x!==t).join(',') : [...curr, t].join(','));
+                                setToppings(curr.includes(t) ? curr.filter(x=>x!==t).join(', ') : [...curr, t].join(', '));
                             }}
                             className={`px-3 py-1 rounded-full text-[10px] border transition-all ${toppings.includes(t) ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-slate-950 border-slate-800 text-slate-500'}`}
                           >
